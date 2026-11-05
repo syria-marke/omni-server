@@ -876,7 +876,6 @@ async def download(
     )
 
 
-@api.get("/server/status")
 def cgroup_read(paths: list[str]) -> Optional[str]:
     for p in paths:
         try:
@@ -914,6 +913,7 @@ def container_limits() -> dict:
     return {"memory_total": mem_total_b, "memory_used": mem_used_b, "cpu_cores": cores}
 
 
+@api.get("/server/status")
 async def server_status(_: Annotated[dict, Depends(require_owner)]):
     cpu = await run_in_threadpool(psutil.cpu_percent, 0.4)
     host_mem = psutil.virtual_memory()
