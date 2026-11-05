@@ -877,21 +877,80 @@ async def download(
 
 
 @api.get("/server/status")
+def cgroup_read(paths: list[str]) -> Optional[str]:
+    for p in paths:
+        try:
+            raw = Path(p).read_text().strip()
+        except Exception:
+            continue
+        if raw and raw != "max":
+            return raw
+    return None
+
+
+def container_limits() -> dict:
+    """Real quota of the container (cgroup v2 first, then v1). Falls back to host values."""
+    mem_total = cgroup_read(["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"])
+    if mem_total and mem_total.isdigit() and int(mem_total) < (1 << 60):
+        mem_total_b = int(mem_total)
+    else:
+        mem_total_b = None
+
+    mem_used = cgroup_read(["/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"])
+    mem_used_b = int(mem_used) if mem_used and mem_used.isdigit() else None
+
+    cores = None
+    raw_v2 = cgroup_read(["/sys/fs/cgroup/cpu.max"])
+    if raw_v2:
+        parts = raw_v2.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit() and int(parts[1]) > 0:
+            cores = max(int(parts[0]) / int(parts[1]), 0.1)
+    if cores is None:
+        quota = cgroup_read(["/sys/fs/cgroup/cpu/cpu.cfs_quota_us"])
+        period = cgroup_read(["/sys/fs/cgroup/cpu/cpu.cfs_period_us"])
+        if quota and period and int(quota) > 0 and int(period) > 0:
+            cores = max(int(quota) / int(period), 0.1)
+
+    return {"memory_total": mem_total_b, "memory_used": mem_used_b, "cpu_cores": cores}
+
+
 async def server_status(_: Annotated[dict, Depends(require_owner)]):
     cpu = await run_in_threadpool(psutil.cpu_percent, 0.4)
-    mem = psutil.virtual_memory()
+    host_mem = psutil.virtual_memory()
     disk = shutil.disk_usage("/")
     load = os.getloadavg()
+    lim = container_limits()
+
+    mem_total = lim["memory_total"] or host_mem.total
+    mem_used = lim["memory_used"]
+    if mem_used is None or mem_used > mem_total:
+        mem_used = min(host_mem.used if not lim["memory_total"] else mem_total, mem_total)
+    cores = lim["cpu_cores"]
+
+    try:
+        started = psutil.Process().create_time()
+    except Exception:
+        started = psutil.boot_time()
+
     return {
         "hostname": socket.gethostname(),
         "os": platform.platform(),
         "python": platform.python_version(),
-        "cpu_count": psutil.cpu_count(),
+        "cpu_count": max(int(round(cores)), 1) if cores else psutil.cpu_count(),
+        "cpu_quota": round(cores, 2) if cores else None,
         "cpu_percent": cpu,
         "load": [round(x, 2) for x in load],
-        "memory": {"total": mem.total, "used": mem.total - mem.available, "percent": mem.percent},
+        "memory": {
+            "total": mem_total,
+            "used": mem_used,
+            "percent": round(mem_used / mem_total * 100, 1) if mem_total else 0.0,
+        },
         "disk": {"total": disk.total, "used": disk.used, "percent": round(disk.used / disk.total * 100, 1)},
-        "uptime_seconds": int(time.time() - psutil.boot_time()),
+        "uptime_seconds": int(time.time() - started),
+        "host_memory_total": host_mem.total,
+        "host_cpu_count": psutil.cpu_count(),
+        "host_uptime_seconds": int(time.time() - psutil.boot_time()),
+        "containerized": lim["memory_total"] is not None,
         "model": BUILTIN_MODELS[DEFAULT_MODEL]["label"],
     }
 
