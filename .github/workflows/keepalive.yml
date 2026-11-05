@@ -1,0 +1,20 @@
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Omni backend so Render stays awake
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -m 90 -w "%{http_code}" https://omni-server-9vuj.onrender.com/health || true)
+            echo "attempt $i -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 15
+          done
+          exit 0
