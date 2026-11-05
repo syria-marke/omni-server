@@ -4,3 +4,4 @@ __pycache__/
 objstore/
 uploads/
 data/
+backend/web/node_modules/
