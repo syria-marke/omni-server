@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 mkdir -p /data/db /app/uploads
-mongod --dbpath /data/db --bind_ip 127.0.0.1 --port 27017 --fork --logpath /tmp/mongod.log || true
+mongod --dbpath /data/db --bind_ip 127.0.0.1 --port 27017 --wiredTigerCacheSizeGB 0.25 --fork --logpath /tmp/mongod.log || true
 for i in $(seq 1 30); do
   if (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null; then break; fi
   sleep 1

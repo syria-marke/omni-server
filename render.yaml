@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: omni-server
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URL
+        value: mongodb://127.0.0.1:27017
+      - key: DB_NAME
+        value: omni_data
+      - key: APP_NAME
+        value: omni
+      - key: STORAGE_DIR
+        value: /tmp/objstore
+      - key: DEFAULT_MODEL
+        value: deepseek-flash
+      - key: APP_PASSCODE
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
